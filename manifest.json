@@ -7,7 +7,8 @@
     "activeTab",
     "scripting",
     "downloads",
-    "nativeMessaging"
+    "nativeMessaging",
+    "storage"
   ],
   "action": {
     "default_popup": "popup.html",

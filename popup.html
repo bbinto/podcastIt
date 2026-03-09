@@ -5,9 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>PodcastIt</title>
   <style>
+    * { box-sizing: border-box; }
     body {
       font-family: 'Segoe UI', sans-serif;
-      width: 280px;
+      width: 340px;
       padding: 16px;
       background: #1a1a2e;
       color: #e0e0e0;
@@ -15,7 +16,7 @@
     }
     h1 {
       font-size: 18px;
-      margin: 0 0 6px;
+      margin: 0 0 4px;
       color: #a78bfa;
       display: flex;
       align-items: center;
@@ -25,33 +26,104 @@
     p.subtitle {
       font-size: 12px;
       color: #888;
-      margin: 0 0 16px;
+      margin: 0 0 14px;
     }
     #status {
       font-size: 12px;
       min-height: 18px;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
       color: #a78bfa;
     }
-    #status.error { color: #f87171; }
+    #status.error   { color: #f87171; }
     #status.success { color: #34d399; }
+
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
     button {
-      width: 100%;
-      padding: 10px;
+      flex: 1;
+      padding: 9px;
       background: #7c3aed;
       color: white;
       border: none;
       border-radius: 8px;
-      font-size: 14px;
+      font-size: 13px;
       cursor: pointer;
       transition: background 0.2s;
     }
-    button:hover { background: #6d28d9; }
+    button:hover  { background: #6d28d9; }
     button:disabled { background: #4a4a6a; cursor: not-allowed; }
+    #logToggleBtn {
+      flex: 0 0 auto;
+      background: #2d2d50;
+      font-size: 12px;
+      padding: 9px 12px;
+    }
+    #logToggleBtn:hover { background: #3a3a6a; }
+
+    /* Log panel */
+    #logPanel {
+      display: none;
+      border-top: 1px solid #2d2d50;
+      padding-top: 10px;
+    }
+    #logPanel.open { display: block; }
+
+    .log-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .log-header span {
+      font-size: 11px;
+      font-weight: 600;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    #clearLogsBtn {
+      flex: 0 0 auto;
+      background: #3a1a1a;
+      color: #f87171;
+      border: none;
+      border-radius: 5px;
+      font-size: 11px;
+      padding: 3px 8px;
+      cursor: pointer;
+    }
+    #clearLogsBtn:hover { background: #5a2a2a; }
+
+    #logEntries {
+      max-height: 200px;
+      overflow-y: auto;
+      background: #0f0f1e;
+      border-radius: 6px;
+      padding: 8px;
+      font-size: 11px;
+      font-family: 'Courier New', monospace;
+      line-height: 1.5;
+    }
+    #logEntries::-webkit-scrollbar { width: 4px; }
+    #logEntries::-webkit-scrollbar-thumb { background: #3a3a6a; border-radius: 2px; }
+
+    .log-entry { display: flex; gap: 6px; }
+    .log-ts    { color: #555; flex-shrink: 0; }
+    .log-level { flex-shrink: 0; font-weight: 700; width: 38px; }
+    .log-msg   { color: #ccc; word-break: break-word; }
+    .log-level.INFO  { color: #60a5fa; }
+    .log-level.WARN  { color: #fbbf24; }
+    .log-level.ERROR { color: #f87171; }
+    .log-msg.ERROR   { color: #fca5a5; }
+
+    #noLogs { color: #555; font-size: 11px; text-align: center; padding: 8px 0; }
+
     .info {
       font-size: 11px;
-      color: #666;
-      margin-top: 12px;
+      color: #555;
+      margin-top: 10px;
       text-align: center;
     }
   </style>
@@ -59,8 +131,22 @@
 <body>
   <h1><span class="icon">🎙️</span> PodcastIt</h1>
   <p class="subtitle">Highlight text or use full page — then hit Convert.</p>
+
   <div id="status">Ready.</div>
-  <button id="convertBtn">Convert to Podcast</button>
+
+  <div class="btn-row">
+    <button id="convertBtn">Convert to Podcast</button>
+    <button id="logToggleBtn" title="View logs">📋 Logs</button>
+  </div>
+
+  <div id="logPanel">
+    <div class="log-header">
+      <span>Extension Log</span>
+      <button id="clearLogsBtn">Clear</button>
+    </div>
+    <div id="logEntries"><div id="noLogs">No logs yet.</div></div>
+  </div>
+
   <div class="info">Uses selected text or full page if nothing selected.</div>
   <script src="popup.js"></script>
 </body>

@@ -1,44 +1,75 @@
+importScripts('logger.js');
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'convertToPodcast') {
-    handleConvert(msg).then(sendResponse).catch(err => sendResponse({ success: false, error: err.message }));
+    handleConvert(msg).then(sendResponse).catch(async (err) => {
+      await Logger.error('handleConvert failed: ' + err.message);
+      sendResponse({ success: false, error: err.message });
+    });
     return true; // keep channel open for async response
+  }
+
+  if (msg.action === 'getLogs') {
+    Logger.getLogs().then(logs => sendResponse({ logs }));
+    return true;
+  }
+
+  if (msg.action === 'clearLogs') {
+    Logger.clear().then(() => sendResponse({ ok: true }));
+    return true;
   }
 });
 
 async function handleConvert({ content, title, url }) {
-  // Sanitize title into a safe filename (no extension yet)
+  await Logger.info(`=== New conversion started ===`);
+  await Logger.info(`Source URL: ${url}`);
+  await Logger.info(`Page title: ${title}`);
+  await Logger.info(`Content length: ${content.length} chars`);
+
   const safeName = sanitizeFilename(title);
   const filename = safeName + '.md';
+  await Logger.info(`Sanitized filename: ${filename}`);
 
-  // Build markdown content
   const mdContent = buildMarkdown(title, url, content);
-
-  // Convert string to data URL for download
   const dataUrl = 'data:text/markdown;charset=utf-8,' + encodeURIComponent(mdContent);
 
-  // Download the .md file to default Downloads folder
-  const downloadId = await new Promise((resolve, reject) => {
-    chrome.downloads.download(
-      {
-        url: dataUrl,
-        filename: filename,
-        saveAs: false,
-        conflictAction: 'uniquify'
-      },
-      (id) => {
-        if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-        else resolve(id);
-      }
-    );
-  });
+  await Logger.info('Starting MD file download...');
+  let downloadId;
+  try {
+    downloadId = await new Promise((resolve, reject) => {
+      chrome.downloads.download(
+        { url: dataUrl, filename, saveAs: false, conflictAction: 'uniquify' },
+        (id) => {
+          if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
+          else resolve(id);
+        }
+      );
+    });
+    await Logger.info(`Download initiated, id=${downloadId}`);
+  } catch (err) {
+    await Logger.error('Download failed to start: ' + err.message);
+    throw err;
+  }
 
-  // Wait for download to complete and get the final path
-  const finalPath = await waitForDownload(downloadId);
+  let finalPath;
+  try {
+    finalPath = await waitForDownload(downloadId);
+    await Logger.info(`Download complete: ${finalPath}`);
+  } catch (err) {
+    await Logger.error('Download did not complete: ' + err.message);
+    throw err;
+  }
 
-  // Trigger native host to run the podcast script
-  const result = await sendToNativeHost({ mdPath: finalPath, mdName: safeName });
-
-  return result;
+  await Logger.info('Sending to native host...');
+  try {
+    const result = await sendToNativeHost({ mdPath: finalPath, mdName: safeName });
+    await Logger.info('Native host returned success.');
+    if (result.output) await Logger.info('Host output: ' + result.output.trim());
+    return result;
+  } catch (err) {
+    await Logger.error('Native host error: ' + err.message);
+    throw err;
+  }
 }
 
 function sanitizeFilename(title) {
@@ -58,25 +89,23 @@ function waitForDownload(downloadId) {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       chrome.downloads.onChanged.removeListener(listener);
-      reject(new Error('Download timed out'));
+      reject(new Error('Download timed out after 30s'));
     }, 30000);
 
     function listener(delta) {
       if (delta.id !== downloadId) return;
-
       if (delta.state) {
         if (delta.state.current === 'complete') {
           clearTimeout(timeout);
           chrome.downloads.onChanged.removeListener(listener);
-          // Get final filename
           chrome.downloads.search({ id: downloadId }, (items) => {
             if (items && items[0]) resolve(items[0].filename);
-            else reject(new Error('Cannot find download item'));
+            else reject(new Error('Cannot find completed download item'));
           });
         } else if (delta.state.current === 'interrupted') {
           clearTimeout(timeout);
           chrome.downloads.onChanged.removeListener(listener);
-          reject(new Error('Download interrupted'));
+          reject(new Error('Download was interrupted by browser'));
         }
       }
     }
@@ -94,7 +123,7 @@ function sendToNativeHost(payload) {
         if (chrome.runtime.lastError) {
           reject(new Error(chrome.runtime.lastError.message));
         } else if (response && response.success) {
-          resolve({ success: true });
+          resolve({ success: true, output: response.output || '' });
         } else {
           reject(new Error(response ? response.error : 'Unknown native host error'));
         }
