@@ -1,24 +1,74 @@
-const btn          = document.getElementById('convertBtn');
-const status       = document.getElementById('status');
-const logPanel     = document.getElementById('logPanel');
-const logToggleBtn = document.getElementById('logToggleBtn');
-const logEntries   = document.getElementById('logEntries');
-const clearLogsBtn = document.getElementById('clearLogsBtn');
-const lastJobEl    = document.getElementById('lastJob');
+const btn               = document.getElementById('convertBtn');
+const status            = document.getElementById('status');
+const logPanel          = document.getElementById('logPanel');
+const logToggleBtn      = document.getElementById('logToggleBtn');
+const logEntries        = document.getElementById('logEntries');
+const clearLogsBtn      = document.getElementById('clearLogsBtn');
+const lastJobEl         = document.getElementById('lastJob');
+const settingsPanel     = document.getElementById('settingsPanel');
+const settingsToggleBtn = document.getElementById('settingsToggleBtn');
+const serverUrlInput    = document.getElementById('serverUrlInput');
+const apiTokenInput     = document.getElementById('apiTokenInput');
+const saveSettingsBtn   = document.getElementById('saveSettingsBtn');
+const pingBtn           = document.getElementById('pingBtn');
+const pingStatus        = document.getElementById('pingStatus');
+
+const DEFAULT_SERVER_URL = 'http://YOUR_PI_IP:5050';
+
+// ── Settings ───────────────────────────────────────────────────────────────────
+settingsToggleBtn.addEventListener('click', () => {
+  settingsPanel.classList.toggle('open');
+});
+
+chrome.storage.local.get(['podcastit_server_url', 'podcastit_api_token'], (data) => {
+  serverUrlInput.value = data.podcastit_server_url || DEFAULT_SERVER_URL;
+  apiTokenInput.value  = data.podcastit_api_token  || '';
+});
+
+saveSettingsBtn.addEventListener('click', () => {
+  const url   = serverUrlInput.value.trim().replace(/\/$/, '');
+  const token = apiTokenInput.value.trim();
+  chrome.storage.local.set({ podcastit_server_url: url, podcastit_api_token: token }, () => {
+    saveSettingsBtn.textContent = 'Saved ✓';
+    setTimeout(() => { saveSettingsBtn.textContent = 'Save'; }, 1500);
+  });
+});
+
+pingBtn.addEventListener('click', async () => {
+  const url   = serverUrlInput.value.trim().replace(/\/$/, '');
+  const token = apiTokenInput.value.trim();
+  pingStatus.textContent = 'Pinging…';
+  pingStatus.className   = '';
+  try {
+    const resp = await fetch(`${url}/ping`, {
+      headers: { 'X-Api-Token': token }
+    });
+    const body = await resp.json();
+    if (resp.ok && body.ok) {
+      pingStatus.textContent = '✓ Server reachable';
+      pingStatus.className   = 'ok';
+    } else {
+      pingStatus.textContent = `✗ ${body.error || 'Unexpected response'}`;
+      pingStatus.className   = 'err';
+    }
+  } catch (err) {
+    pingStatus.textContent = `✗ ${err.message}`;
+    pingStatus.className   = 'err';
+  }
+});
 
 // ── Last job card ──────────────────────────────────────────────────────────────
 function renderLastJob(job) {
   if (!job) return;
   lastJobEl.className = job.success ? 'success' : 'error';
-
   document.getElementById('jobIcon').textContent     = job.success ? '✅' : '❌';
   document.getElementById('jobHeadline').textContent = job.success ? 'Podcast uploaded!' : 'Conversion failed';
-  document.getElementById('jobFile').textContent     = job.success ? job.mp3Name || '' : '';
+  document.getElementById('jobFile').textContent     = job.success ? (job.mp3Name || '') : '';
   document.getElementById('jobErrorMsg').textContent = job.success ? '' : (job.error || 'Unknown error');
-
   const d = new Date(job.ts);
   const timeStr = d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
-  document.getElementById('jobTime').textContent = `${timeStr}${job.title ? '  ·  ' + job.title.substring(0, 40) : ''}`;
+  document.getElementById('jobTime').textContent =
+    `${timeStr}${job.title ? '  ·  ' + job.title.substring(0, 40) : ''}`;
 }
 
 async function loadLastJob() {
@@ -32,7 +82,7 @@ function setStatus(msg, type = '') {
   status.className = type;
 }
 
-// ── Log panel rendering ────────────────────────────────────────────────────────
+// ── Log panel ──────────────────────────────────────────────────────────────────
 function renderLogs(logs) {
   if (!logs || logs.length === 0) {
     logEntries.innerHTML = '<div id="noLogs">No logs yet.</div>';
@@ -47,7 +97,6 @@ function renderLogs(logs) {
       <span class="${msgClass}">${escapeHtml(entry.msg)}</span>
     </div>`;
   }).join('');
-  // Auto-scroll to bottom
   logEntries.scrollTop = logEntries.scrollHeight;
 }
 
@@ -60,20 +109,18 @@ async function refreshLogs() {
   renderLogs(resp.logs);
 }
 
-// ── Log panel toggle ───────────────────────────────────────────────────────────
 logToggleBtn.addEventListener('click', () => {
   const open = logPanel.classList.toggle('open');
   logToggleBtn.textContent = open ? '📋 Hide' : '📋 Logs';
   if (open) refreshLogs();
 });
 
-// ── Clear logs ─────────────────────────────────────────────────────────────────
 clearLogsBtn.addEventListener('click', async () => {
   await chrome.runtime.sendMessage({ action: 'clearLogs' });
   renderLogs([]);
 });
 
-// ── Convert button ─────────────────────────────────────────────────────────────
+// ── Convert ────────────────────────────────────────────────────────────────────
 btn.addEventListener('click', async () => {
   btn.disabled = true;
   setStatus('Extracting content...');
@@ -101,7 +148,7 @@ btn.addEventListener('click', async () => {
       return;
     }
 
-    setStatus(`Got ${source} content (${content.length} chars). Processing...`);
+    setStatus(`Got ${source} content (${content.length} chars). Sending to Pi...`);
 
     const response = await chrome.runtime.sendMessage({
       action: 'convertToPodcast',
@@ -115,7 +162,6 @@ btn.addEventListener('click', async () => {
     } else {
       setStatus('Error: ' + response.error, 'error');
     }
-    // Update the result card immediately
     await loadLastJob();
   } catch (err) {
     setStatus('Error: ' + err.message, 'error');
@@ -123,12 +169,10 @@ btn.addEventListener('click', async () => {
   }
 
   btn.disabled = false;
-
-  // Refresh log panel if open
   if (logPanel.classList.contains('open')) refreshLogs();
 });
 
-// On popup open: load last job card + auto-open log panel on errors
+// ── On open ────────────────────────────────────────────────────────────────────
 (async () => {
   await loadLastJob();
   const resp = await chrome.runtime.sendMessage({ action: 'getLogs' });

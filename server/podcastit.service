@@ -1,0 +1,14 @@
+[Unit]
+Description=PodcastIt HTTP Server
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/Documents/GitHub/podcastIt/server
+ExecStart=/usr/bin/python3 /home/pi/Documents/GitHub/podcastIt/server/server.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

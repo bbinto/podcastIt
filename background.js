@@ -1,5 +1,7 @@
 importScripts('logger.js');
 
+const DEFAULT_SERVER_URL = 'http://YOUR_PI_IP:5050';
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'convertToPodcast') {
     handleConvert(msg)
@@ -12,7 +14,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         await saveLastJob({ success: false, error: err.message, title: msg.title, url: msg.url });
         sendResponse({ success: false, error: err.message });
       });
-    return true; // keep channel open for async response
+    return true;
   }
 
   if (msg.action === 'getLogs') {
@@ -33,56 +35,64 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
+async function getSettings() {
+  return new Promise(resolve => {
+    chrome.storage.local.get(['podcastit_server_url', 'podcastit_api_token'], (data) => {
+      resolve({
+        serverUrl: (data.podcastit_server_url || DEFAULT_SERVER_URL).replace(/\/$/, ''),
+        apiToken:  data.podcastit_api_token || ''
+      });
+    });
+  });
+}
+
 async function handleConvert({ content, title, url }) {
-  await Logger.info(`=== New conversion started ===`);
+  await Logger.info('=== New conversion started ===');
   await Logger.info(`Source URL: ${url}`);
   await Logger.info(`Page title: ${title}`);
   await Logger.info(`Content length: ${content.length} chars`);
 
-  const safeName = sanitizeFilename(title);
-  const filename = safeName + '.md';
-  await Logger.info(`Sanitized filename: ${filename}`);
-
+  const safeName  = sanitizeFilename(title);
   const mdContent = buildMarkdown(title, url, content);
-  const dataUrl = 'data:text/markdown;charset=utf-8,' + encodeURIComponent(mdContent);
+  await Logger.info(`Filename: ${safeName}.md`);
 
-  await Logger.info('Starting MD file download...');
-  let downloadId;
+  const { serverUrl, apiToken } = await getSettings();
+  await Logger.info(`Sending to server: ${serverUrl}`);
+
+  const result = await sendToServer({ mdContent, mdName: safeName, title, url }, serverUrl, apiToken);
+  await Logger.info('Server returned success.');
+  if (result.output) await Logger.info('Server output: ' + result.output.trim());
+
+  return { success: true, mp3Name: safeName + '.mp3', mdFile: safeName + '.md' };
+}
+
+async function sendToServer(payload, serverUrl, apiToken) {
+  let resp;
   try {
-    downloadId = await new Promise((resolve, reject) => {
-      chrome.downloads.download(
-        { url: dataUrl, filename, saveAs: false, conflictAction: 'uniquify' },
-        (id) => {
-          if (chrome.runtime.lastError) reject(new Error(chrome.runtime.lastError.message));
-          else resolve(id);
-        }
-      );
+    resp = await fetch(`${serverUrl}/convert`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Api-Token': apiToken
+      },
+      body: JSON.stringify(payload)
     });
-    await Logger.info(`Download initiated, id=${downloadId}`);
   } catch (err) {
-    await Logger.error('Download failed to start: ' + err.message);
-    throw err;
+    throw new Error(`Cannot reach server at ${serverUrl} — is it running? (${err.message})`);
   }
 
-  let finalPath;
+  let body;
   try {
-    finalPath = await waitForDownload(downloadId);
-    await Logger.info(`Download complete: ${finalPath}`);
-  } catch (err) {
-    await Logger.error('Download did not complete: ' + err.message);
-    throw err;
+    body = await resp.json();
+  } catch {
+    throw new Error(`Server returned non-JSON response (HTTP ${resp.status})`);
   }
 
-  await Logger.info('Sending to native host...');
-  try {
-    const result = await sendToNativeHost({ mdPath: finalPath, mdName: safeName });
-    await Logger.info('Native host returned success.');
-    if (result.output) await Logger.info('Host output: ' + result.output.trim());
-    return { success: true, mp3Name: safeName + '.mp3', mdFile: filename, output: result.output };
-  } catch (err) {
-    await Logger.error('Native host error: ' + err.message);
-    throw err;
+  if (!resp.ok || !body.success) {
+    throw new Error(body.error || `Server error HTTP ${resp.status}`);
   }
+
+  return body;
 }
 
 async function saveLastJob(job) {
@@ -101,51 +111,4 @@ function sanitizeFilename(title) {
 function buildMarkdown(title, url, content) {
   const date = new Date().toISOString().split('T')[0];
   return `# ${title}\n\n> Source: ${url}\n> Date: ${date}\n\n---\n\n${content}\n`;
-}
-
-function waitForDownload(downloadId) {
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      chrome.downloads.onChanged.removeListener(listener);
-      reject(new Error('Download timed out after 30s'));
-    }, 30000);
-
-    function listener(delta) {
-      if (delta.id !== downloadId) return;
-      if (delta.state) {
-        if (delta.state.current === 'complete') {
-          clearTimeout(timeout);
-          chrome.downloads.onChanged.removeListener(listener);
-          chrome.downloads.search({ id: downloadId }, (items) => {
-            if (items && items[0]) resolve(items[0].filename);
-            else reject(new Error('Cannot find completed download item'));
-          });
-        } else if (delta.state.current === 'interrupted') {
-          clearTimeout(timeout);
-          chrome.downloads.onChanged.removeListener(listener);
-          reject(new Error('Download was interrupted by browser'));
-        }
-      }
-    }
-
-    chrome.downloads.onChanged.addListener(listener);
-  });
-}
-
-function sendToNativeHost(payload) {
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendNativeMessage(
-      'com.podcastit.host',
-      payload,
-      (response) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-        } else if (response && response.success) {
-          resolve({ success: true, output: response.output || '' });
-        } else {
-          reject(new Error(response ? response.error : 'Unknown native host error'));
-        }
-      }
-    );
-  });
 }

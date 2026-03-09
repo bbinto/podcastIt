@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "PodcastIt",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Convert selected or full page content to a podcast via md2podcast",
   "permissions": [
     "activeTab",
     "scripting",
-    "downloads",
-    "nativeMessaging",
     "storage"
+  ],
+  "host_permissions": [
+    "http://*/*"
   ],
   "action": {
     "default_popup": "popup.html",
