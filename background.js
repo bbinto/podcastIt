@@ -2,10 +2,16 @@ importScripts('logger.js');
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'convertToPodcast') {
-    handleConvert(msg).then(sendResponse).catch(async (err) => {
-      await Logger.error('handleConvert failed: ' + err.message);
-      sendResponse({ success: false, error: err.message });
-    });
+    handleConvert(msg)
+      .then(async (result) => {
+        await saveLastJob({ success: true, mp3Name: result.mp3Name, mdFile: result.mdFile, title: msg.title, url: msg.url });
+        sendResponse(result);
+      })
+      .catch(async (err) => {
+        await Logger.error('handleConvert failed: ' + err.message);
+        await saveLastJob({ success: false, error: err.message, title: msg.title, url: msg.url });
+        sendResponse({ success: false, error: err.message });
+      });
     return true; // keep channel open for async response
   }
 
@@ -16,6 +22,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
   if (msg.action === 'clearLogs') {
     Logger.clear().then(() => sendResponse({ ok: true }));
+    return true;
+  }
+
+  if (msg.action === 'getLastJob') {
+    chrome.storage.local.get('podcastit_last_job', (data) => {
+      sendResponse({ job: data.podcastit_last_job || null });
+    });
     return true;
   }
 });
@@ -65,11 +78,16 @@ async function handleConvert({ content, title, url }) {
     const result = await sendToNativeHost({ mdPath: finalPath, mdName: safeName });
     await Logger.info('Native host returned success.');
     if (result.output) await Logger.info('Host output: ' + result.output.trim());
-    return result;
+    return { success: true, mp3Name: safeName + '.mp3', mdFile: filename, output: result.output };
   } catch (err) {
     await Logger.error('Native host error: ' + err.message);
     throw err;
   }
+}
+
+async function saveLastJob(job) {
+  job.ts = new Date().toISOString();
+  await chrome.storage.local.set({ podcastit_last_job: job });
 }
 
 function sanitizeFilename(title) {

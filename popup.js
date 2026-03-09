@@ -4,6 +4,27 @@ const logPanel     = document.getElementById('logPanel');
 const logToggleBtn = document.getElementById('logToggleBtn');
 const logEntries   = document.getElementById('logEntries');
 const clearLogsBtn = document.getElementById('clearLogsBtn');
+const lastJobEl    = document.getElementById('lastJob');
+
+// ── Last job card ──────────────────────────────────────────────────────────────
+function renderLastJob(job) {
+  if (!job) return;
+  lastJobEl.className = job.success ? 'success' : 'error';
+
+  document.getElementById('jobIcon').textContent     = job.success ? '✅' : '❌';
+  document.getElementById('jobHeadline').textContent = job.success ? 'Podcast uploaded!' : 'Conversion failed';
+  document.getElementById('jobFile').textContent     = job.success ? job.mp3Name || '' : '';
+  document.getElementById('jobErrorMsg').textContent = job.success ? '' : (job.error || 'Unknown error');
+
+  const d = new Date(job.ts);
+  const timeStr = d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
+  document.getElementById('jobTime').textContent = `${timeStr}${job.title ? '  ·  ' + job.title.substring(0, 40) : ''}`;
+}
+
+async function loadLastJob() {
+  const resp = await chrome.runtime.sendMessage({ action: 'getLastJob' });
+  if (resp && resp.job) renderLastJob(resp.job);
+}
 
 // ── Status helper ──────────────────────────────────────────────────────────────
 function setStatus(msg, type = '') {
@@ -90,12 +111,15 @@ btn.addEventListener('click', async () => {
     });
 
     if (response.success) {
-      setStatus('Podcast job started! Check your downloads.', 'success');
+      setStatus('Done! Podcast created and uploaded.', 'success');
     } else {
       setStatus('Error: ' + response.error, 'error');
     }
+    // Update the result card immediately
+    await loadLastJob();
   } catch (err) {
     setStatus('Error: ' + err.message, 'error');
+    await loadLastJob();
   }
 
   btn.disabled = false;
@@ -104,11 +128,13 @@ btn.addEventListener('click', async () => {
   if (logPanel.classList.contains('open')) refreshLogs();
 });
 
-// Auto-open log panel if there are any ERROR entries from a previous run
-chrome.runtime.sendMessage({ action: 'getLogs' }, (resp) => {
+// On popup open: load last job card + auto-open log panel on errors
+(async () => {
+  await loadLastJob();
+  const resp = await chrome.runtime.sendMessage({ action: 'getLogs' });
   if (resp && resp.logs && resp.logs.some(l => l.level === 'ERROR')) {
     logPanel.classList.add('open');
     logToggleBtn.textContent = '📋 Hide';
     renderLogs(resp.logs);
   }
-});
+})();
