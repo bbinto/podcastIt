@@ -7,7 +7,7 @@ Works from **any computer** on your network — the extension talks to a lightwe
 
 ---
 
-![Screenshot of local Chrome Extension "PodcastIt"](screenshot.png =300x202)
+![Screenshot of local Chrome Extension "PodcastIt"](screenshot.png)
 
 
 ---
