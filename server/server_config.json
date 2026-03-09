@@ -1,0 +1,9 @@
+{
+  "api_token": "change-me-please",
+  "host": "0.0.0.0",
+  "port": 5050,
+  "md_save_dir": "/home/pi/Downloads",
+  "podcast_script": "/home/pi/Documents/GitHub/md-to-podcast/md2podcast.py",
+  "upload_script": "/home/pi/Documents/GitHub/md-to-podcast/upload_podcast_ftp.py",
+  "podcast_out_dir": "/home/pi/Documents/GitHub/md-to-podcast/podcast"
+}
