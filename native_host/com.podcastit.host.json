@@ -1,0 +1,9 @@
+{
+  "name": "com.podcastit.host",
+  "description": "PodcastIt native host — runs md2podcast and upload scripts",
+  "path": "/home/pi/Documents/GitHub/podcastIt/native_host/podcastit_host.py",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://REPLACE_WITH_YOUR_EXTENSION_ID/"
+  ]
+}

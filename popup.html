@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PodcastIt</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      width: 280px;
+      padding: 16px;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      margin: 0;
+    }
+    h1 {
+      font-size: 18px;
+      margin: 0 0 6px;
+      color: #a78bfa;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    h1 span.icon { font-size: 22px; }
+    p.subtitle {
+      font-size: 12px;
+      color: #888;
+      margin: 0 0 16px;
+    }
+    #status {
+      font-size: 12px;
+      min-height: 18px;
+      margin-bottom: 12px;
+      color: #a78bfa;
+    }
+    #status.error { color: #f87171; }
+    #status.success { color: #34d399; }
+    button {
+      width: 100%;
+      padding: 10px;
+      background: #7c3aed;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover { background: #6d28d9; }
+    button:disabled { background: #4a4a6a; cursor: not-allowed; }
+    .info {
+      font-size: 11px;
+      color: #666;
+      margin-top: 12px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1><span class="icon">🎙️</span> PodcastIt</h1>
+  <p class="subtitle">Highlight text or use full page — then hit Convert.</p>
+  <div id="status">Ready.</div>
+  <button id="convertBtn">Convert to Podcast</button>
+  <div class="info">Uses selected text or full page if nothing selected.</div>
+  <script src="popup.js"></script>
+</body>
+</html>
