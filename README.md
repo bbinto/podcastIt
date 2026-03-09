@@ -5,7 +5,10 @@ Chrome extension that converts selected text (or the full page) into a podcast e
 Works from **any computer** on your network — the extension talks to a lightweight HTTP server running on the Raspberry Pi.
 
 
+---
+
 ![Screenshot of local Chrome Extension "PodcastIt"](screenshot.png)
+
 
 ---
 
