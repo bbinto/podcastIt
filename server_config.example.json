@@ -1,6 +1,6 @@
 {
-  "api_token": "sk-a7Kx9mPqR3nW2vYtL8cZdE5hJbN6uFoQ1iAsTgCwDmXeUyV",
-  "host": "10.88.111.48",
+  "api_token": "change-me-please",
+  "host": "0.0.0.0",
   "port": 5050,
   "md_save_dir": "/home/pi/Downloads",
   "podcast_script": "/home/pi/Documents/GitHub/md-to-podcast/md2podcast.py",
