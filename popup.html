@@ -144,6 +144,30 @@
     #pingStatus.ok  { color: #34d399; }
     #pingStatus.err { color: #f87171; }
 
+    /* Server toggle */
+    .toggle-row {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .toggle-btn {
+      flex: 1;
+      padding: 5px;
+      font-size: 11px;
+      background: #1a1a2e;
+      border: 1px solid #3a3a6a;
+      border-radius: 5px;
+      color: #888;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s, border-color 0.2s;
+    }
+    .toggle-btn.active {
+      background: #7c3aed;
+      border-color: #7c3aed;
+      color: #fff;
+    }
+    .toggle-btn:hover:not(.active) { border-color: #a78bfa; color: #a78bfa; }
+
     /* Log panel */
     #logPanel {
       display: none;
@@ -258,8 +282,19 @@
   <div id="settingsPanel">
     <div class="settings-title">Server Settings</div>
     <div class="field">
-      <label>Pi Server URL</label>
-      <input id="serverUrlInput" type="text" placeholder="http://192.168.1.x:5050" />
+      <label>Connection Mode</label>
+      <div class="toggle-row">
+        <button class="toggle-btn" id="modeLocalBtn">Local IP</button>
+        <button class="toggle-btn" id="modeNgrokBtn">ngrok</button>
+      </div>
+    </div>
+    <div class="field" id="localUrlField">
+      <label>Local Server URL</label>
+      <input id="localUrlInput" type="text" placeholder="http://10.88.111.48:5050" />
+    </div>
+    <div class="field" id="ngrokUrlField" style="display:none">
+      <label>ngrok URL</label>
+      <input id="ngrokUrlInput" type="text" placeholder="https://xxxx.ngrok-free.app" />
     </div>
     <div class="field">
       <label>API Token</label>

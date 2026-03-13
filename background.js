@@ -1,6 +1,6 @@
 importScripts('logger.js');
 
-const DEFAULT_SERVER_URL = 'http://YOUR_PI_IP:5050';
+const DEFAULT_LOCAL_URL = 'http://10.88.111.48:5050';
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === 'convertToPodcast') {
@@ -37,10 +37,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
 async function getSettings() {
   return new Promise(resolve => {
-    chrome.storage.local.get(['podcastit_server_url', 'podcastit_api_token'], (data) => {
+    chrome.storage.local.get(['podcastit_mode', 'podcastit_local_url', 'podcastit_ngrok_url', 'podcastit_api_token'], (data) => {
+      const mode = data.podcastit_mode || 'local';
+      const serverUrl = mode === 'ngrok'
+        ? (data.podcastit_ngrok_url || '').replace(/\/$/, '')
+        : (data.podcastit_local_url || DEFAULT_LOCAL_URL).replace(/\/$/, '');
       resolve({
-        serverUrl: (data.podcastit_server_url || DEFAULT_SERVER_URL).replace(/\/$/, ''),
-        apiToken:  data.podcastit_api_token || ''
+        serverUrl,
+        apiToken: data.podcastit_api_token || ''
       });
     });
   });

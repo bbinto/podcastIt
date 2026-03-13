@@ -7,35 +7,74 @@ const clearLogsBtn      = document.getElementById('clearLogsBtn');
 const lastJobEl         = document.getElementById('lastJob');
 const settingsPanel     = document.getElementById('settingsPanel');
 const settingsToggleBtn = document.getElementById('settingsToggleBtn');
-const serverUrlInput    = document.getElementById('serverUrlInput');
+const localUrlInput     = document.getElementById('localUrlInput');
+const ngrokUrlInput     = document.getElementById('ngrokUrlInput');
 const apiTokenInput     = document.getElementById('apiTokenInput');
 const saveSettingsBtn   = document.getElementById('saveSettingsBtn');
 const pingBtn           = document.getElementById('pingBtn');
 const pingStatus        = document.getElementById('pingStatus');
+const modeLocalBtn      = document.getElementById('modeLocalBtn');
+const modeNgrokBtn      = document.getElementById('modeNgrokBtn');
+const localUrlField     = document.getElementById('localUrlField');
+const ngrokUrlField     = document.getElementById('ngrokUrlField');
 
-const DEFAULT_SERVER_URL = 'http://YOUR_PI_IP:5050';
+const DEFAULT_LOCAL_URL = 'http://10.88.111.48:5050';
+
+// ── Mode toggle ────────────────────────────────────────────────────────────────
+function setMode(mode) {
+  if (mode === 'ngrok') {
+    modeNgrokBtn.classList.add('active');
+    modeLocalBtn.classList.remove('active');
+    localUrlField.style.display = 'none';
+    ngrokUrlField.style.display = '';
+  } else {
+    modeLocalBtn.classList.add('active');
+    modeNgrokBtn.classList.remove('active');
+    localUrlField.style.display = '';
+    ngrokUrlField.style.display = 'none';
+  }
+}
+
+modeLocalBtn.addEventListener('click', () => setMode('local'));
+modeNgrokBtn.addEventListener('click', () => setMode('ngrok'));
 
 // ── Settings ───────────────────────────────────────────────────────────────────
 settingsToggleBtn.addEventListener('click', () => {
   settingsPanel.classList.toggle('open');
 });
 
-chrome.storage.local.get(['podcastit_server_url', 'podcastit_api_token'], (data) => {
-  serverUrlInput.value = data.podcastit_server_url || DEFAULT_SERVER_URL;
-  apiTokenInput.value  = data.podcastit_api_token  || '';
+chrome.storage.local.get(['podcastit_local_url', 'podcastit_ngrok_url', 'podcastit_mode', 'podcastit_api_token'], (data) => {
+  localUrlInput.value = data.podcastit_local_url || DEFAULT_LOCAL_URL;
+  ngrokUrlInput.value = data.podcastit_ngrok_url || '';
+  apiTokenInput.value = data.podcastit_api_token || '';
+  setMode(data.podcastit_mode || 'local');
 });
 
 saveSettingsBtn.addEventListener('click', () => {
-  const url   = serverUrlInput.value.trim().replace(/\/$/, '');
-  const token = apiTokenInput.value.trim();
-  chrome.storage.local.set({ podcastit_server_url: url, podcastit_api_token: token }, () => {
+  const mode      = modeNgrokBtn.classList.contains('active') ? 'ngrok' : 'local';
+  const localUrl  = localUrlInput.value.trim().replace(/\/$/, '');
+  const ngrokUrl  = ngrokUrlInput.value.trim().replace(/\/$/, '');
+  const token     = apiTokenInput.value.trim();
+  chrome.storage.local.set({
+    podcastit_mode:      mode,
+    podcastit_local_url: localUrl,
+    podcastit_ngrok_url: ngrokUrl,
+    podcastit_api_token: token
+  }, () => {
     saveSettingsBtn.textContent = 'Saved ✓';
     setTimeout(() => { saveSettingsBtn.textContent = 'Save'; }, 1500);
   });
 });
 
+function getActiveUrl() {
+  const mode = modeNgrokBtn.classList.contains('active') ? 'ngrok' : 'local';
+  return mode === 'ngrok'
+    ? ngrokUrlInput.value.trim().replace(/\/$/, '')
+    : localUrlInput.value.trim().replace(/\/$/, '');
+}
+
 pingBtn.addEventListener('click', async () => {
-  const url   = serverUrlInput.value.trim().replace(/\/$/, '');
+  const url   = getActiveUrl();
   const token = apiTokenInput.value.trim();
   pingStatus.textContent = 'Pinging…';
   pingStatus.className   = '';
