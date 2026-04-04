@@ -9,6 +9,7 @@ Start: python3 server.py
 import asyncio
 import json
 import os
+import re
 import subprocess
 import tempfile
 import datetime
@@ -81,6 +82,69 @@ def token_ok(request_token, expected_token):
         request_token.encode('utf-8'),
         expected_token.encode('utf-8')
     )
+
+
+# ── Content cleaner ────────────────────────────────────────────────────────────
+# Patterns matched against a stripped line (case-insensitive).
+# A line that matches any of these is dropped entirely.
+_NOISE_EXACT = re.compile(r'''(?ix)^(
+    advertisement | sponsored | sponsored\s+content |
+    related\s+articles? | related\s+posts? | related\s+stories |
+    you\s+may\s+also\s+like | more\s+from\s+.+ | also\s+on\s+.+ |
+    read\s+more | read\s+next | continue\s+reading |
+    share\s+this | share\s+article | share\s+on\s+\w+ |
+    follow\s+us | follow\s+us\s+on\s+\w+ |
+    subscribe(\s+to\s+our\s+(newsletter|podcast))? |
+    sign\s+up\s+for\s+.* | get\s+our\s+(daily\s+)?newsletter |
+    newsletter\s+sign.?up |
+    comments?\s*\(\d*\) | leave\s+a\s+comment | \d+\s+comments? |
+    tags?:\s*.* | filed\s+under:\s*.* | topics?:\s*.* |
+    print\s+this\s+article | email\s+this\s+article |
+    copy\s+link | copied! |
+    cookie\s+policy | privacy\s+policy | terms\s+of\s+(use|service) |
+    all\s+rights\s+reserved | copyright\s+\©?.* |
+    click\s+here\s+to\s+.+
+)$''')
+
+# Lines containing these substrings are dropped (case-insensitive).
+_NOISE_CONTAINS = re.compile(r'''(?ix)(
+    \bsubscribe\s+to\s+our\b |
+    \bnewsletter\b.*\bsign\s*up\b |
+    \bsign\s*up\b.*\bnewsletter\b |
+    \bdisable\s+your\s+ad.?block\b |
+    \bplease\s+(disable|turn\s+off)\s+ad\b |
+    \bwe\s+(rely\s+on|depend\s+on)\s+ads\b |
+    \bthis\s+(content\s+is\s+)?sponsored\s+by\b
+)''')
+
+
+def clean_content(text: str) -> str:
+    """Remove common ad/noise lines from article text."""
+    lines = text.splitlines()
+    cleaned = []
+    skip_block = False   # True while we're inside a noise block
+
+    for line in lines:
+        stripped = line.strip()
+
+        # A blank line ends any active skip block
+        if not stripped:
+            skip_block = False
+            cleaned.append(line)
+            continue
+
+        if skip_block:
+            continue
+
+        if _NOISE_EXACT.match(stripped) or _NOISE_CONTAINS.search(stripped):
+            skip_block = True   # also drop subsequent non-blank lines in the block
+            continue
+
+        cleaned.append(line)
+
+    # Collapse 3+ consecutive blank lines down to 2
+    result = re.sub(r'\n{3,}', '\n\n', '\n'.join(cleaned))
+    return result.strip()
 
 
 # ── Request handler ────────────────────────────────────────────────────────────
@@ -192,6 +256,13 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         log_info(f"Convert request: title={title!r}  mdName={md_name!r}  chars={len(md_content)}")
+
+        # Strip ads / noise before saving
+        md_content_clean = clean_content(md_content)
+        dropped = len(md_content) - len(md_content_clean)
+        if dropped > 0:
+            log_info(f"Content cleaned: removed {dropped} chars of noise")
+        md_content = md_content_clean
 
         # Save .md file
         md_dir = CONFIG['md_save_dir']
