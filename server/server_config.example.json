@@ -1,5 +1,5 @@
 {
-  "api_token": "sk-a7Kx9mPqR3nW2vYtL8cZdE5hJbN6uFoQ1iAsTgCwDmXeUyV",
+  "api_token": "",
   "host": "0.0.0.0",
   "port": 5050,
   "md_save_dir": "/home/pi/Downloads",
@@ -7,5 +7,4 @@
   "upload_script": "/home/pi/Documents/GitHub/md-to-podcast/upload_podcast_ftp.py",
   "podcast_out_dir": "/home/pi/Documents/GitHub/md-to-podcast/podcast",
   "voice": "en-AU-WilliamNeural"
-
 }
