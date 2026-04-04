@@ -17,6 +17,10 @@ const modeLocalBtn      = document.getElementById('modeLocalBtn');
 const modeNgrokBtn      = document.getElementById('modeNgrokBtn');
 const localUrlField     = document.getElementById('localUrlField');
 const ngrokUrlField     = document.getElementById('ngrokUrlField');
+const voiceSelect       = document.getElementById('voiceSelect');
+const loadVoicesBtn     = document.getElementById('loadVoicesBtn');
+const previewVoiceBtn   = document.getElementById('previewVoiceBtn');
+const voiceLoadStatus   = document.getElementById('voiceLoadStatus');
 
 const DEFAULT_LOCAL_URL = 'http://10.88.111.48:5050';
 
@@ -38,28 +42,113 @@ function setMode(mode) {
 modeLocalBtn.addEventListener('click', () => setMode('local'));
 modeNgrokBtn.addEventListener('click', () => setMode('ngrok'));
 
+// ── Voice loading & preview ────────────────────────────────────────────────────
+let voicesLoaded = false;
+
+async function loadVoices() {
+  const url   = getActiveUrl();
+  const token = apiTokenInput.value.trim();
+  voiceLoadStatus.textContent = 'Loading…';
+  loadVoicesBtn.disabled = true;
+  try {
+    const resp = await fetch(`${url}/voices`, { headers: { 'X-Api-Token': token } });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) throw new Error(data.error || 'Failed');
+
+    // Group by locale
+    const groups = {};
+    for (const v of data.voices) {
+      (groups[v.locale] = groups[v.locale] || []).push(v);
+    }
+    voiceSelect.innerHTML = '<option value="">— server default —</option>';
+    for (const locale of Object.keys(groups).sort()) {
+      const og = document.createElement('optgroup');
+      og.label = locale;
+      for (const v of groups[locale]) {
+        const opt = document.createElement('option');
+        opt.value = v.name;
+        // Strip locale prefix for readability: en-AU-WilliamNeural → William (Male)
+        const shortLabel = v.name.replace(`${locale}-`, '').replace('Neural', '');
+        opt.textContent = `${shortLabel}(${v.gender[0]})`;
+        og.appendChild(opt);
+      }
+      voiceSelect.appendChild(og);
+    }
+
+    // Restore saved voice or fall back to server default
+    const saved = await new Promise(r =>
+      chrome.storage.local.get('podcastit_voice', d => r(d.podcastit_voice || ''))
+    );
+    voiceSelect.value = saved || data.default || '';
+    voiceLoadStatus.textContent = `${data.voices.length} voices`;
+    voicesLoaded = true;
+  } catch (err) {
+    voiceLoadStatus.textContent = `✗ ${err.message}`;
+  }
+  loadVoicesBtn.disabled = false;
+}
+
+loadVoicesBtn.addEventListener('click', loadVoices);
+
+previewVoiceBtn.addEventListener('click', async () => {
+  const voice = voiceSelect.value;
+  const url   = getActiveUrl();
+  const token = apiTokenInput.value.trim();
+  previewVoiceBtn.textContent = '⏳';
+  previewVoiceBtn.disabled    = true;
+  try {
+    const resp = await fetch(`${url}/preview`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Api-Token': token },
+      body: JSON.stringify({ voice })
+    });
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      throw new Error(body.error || `HTTP ${resp.status}`);
+    }
+    const blob     = await resp.blob();
+    const audioUrl = URL.createObjectURL(blob);
+    const audio    = new Audio(audioUrl);
+    audio.onended  = () => URL.revokeObjectURL(audioUrl);
+    await audio.play();
+  } catch (err) {
+    voiceLoadStatus.textContent = `✗ ${err.message}`;
+  }
+  previewVoiceBtn.textContent = '▶';
+  previewVoiceBtn.disabled    = false;
+});
+
 // ── Settings ───────────────────────────────────────────────────────────────────
 settingsToggleBtn.addEventListener('click', () => {
   settingsPanel.classList.toggle('open');
+  if (settingsPanel.classList.contains('open') && !voicesLoaded) {
+    loadVoices();
+  }
 });
 
-chrome.storage.local.get(['podcastit_local_url', 'podcastit_ngrok_url', 'podcastit_mode', 'podcastit_api_token'], (data) => {
-  localUrlInput.value = data.podcastit_local_url || DEFAULT_LOCAL_URL;
-  ngrokUrlInput.value = data.podcastit_ngrok_url || '';
-  apiTokenInput.value = data.podcastit_api_token || '';
-  setMode(data.podcastit_mode || 'local');
-});
+chrome.storage.local.get(
+  ['podcastit_local_url', 'podcastit_ngrok_url', 'podcastit_mode', 'podcastit_api_token', 'podcastit_voice'],
+  (data) => {
+    localUrlInput.value = data.podcastit_local_url || DEFAULT_LOCAL_URL;
+    ngrokUrlInput.value = data.podcastit_ngrok_url || '';
+    apiTokenInput.value = data.podcastit_api_token || '';
+    if (data.podcastit_voice) voiceSelect.value = data.podcastit_voice;
+    setMode(data.podcastit_mode || 'local');
+  }
+);
 
 saveSettingsBtn.addEventListener('click', () => {
   const mode      = modeNgrokBtn.classList.contains('active') ? 'ngrok' : 'local';
   const localUrl  = localUrlInput.value.trim().replace(/\/$/, '');
   const ngrokUrl  = ngrokUrlInput.value.trim().replace(/\/$/, '');
   const token     = apiTokenInput.value.trim();
+  const voice     = voiceSelect.value;
   chrome.storage.local.set({
     podcastit_mode:      mode,
     podcastit_local_url: localUrl,
     podcastit_ngrok_url: ngrokUrl,
-    podcastit_api_token: token
+    podcastit_api_token: token,
+    podcastit_voice:     voice
   }, () => {
     saveSettingsBtn.textContent = 'Saved ✓';
     setTimeout(() => { saveSettingsBtn.textContent = 'Save'; }, 1500);
@@ -189,11 +278,13 @@ btn.addEventListener('click', async () => {
 
     setStatus(`Got ${source} content (${content.length} chars). Sending to Pi...`);
 
+    const { podcastit_voice: savedVoice } = await chrome.storage.local.get('podcastit_voice');
     const response = await chrome.runtime.sendMessage({
       action: 'convertToPodcast',
       content,
       title: title || tab.title || 'podcast',
-      url: tab.url
+      url: tab.url,
+      voice: savedVoice || ''
     });
 
     if (response.success) {

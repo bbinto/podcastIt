@@ -6,9 +6,11 @@ Receives markdown content from the Chrome extension and runs the podcast pipelin
 Start: python3 server.py
 """
 
+import asyncio
 import json
 import os
 import subprocess
+import tempfile
 import datetime
 import hmac
 import hashlib
@@ -26,7 +28,8 @@ DEFAULT_CONFIG = {
     "md_save_dir":     "/home/pi/Downloads",
     "podcast_script":  "/home/pi/Documents/GitHub/md-to-podcast/md2podcast.py",
     "upload_script":   "/home/pi/Documents/GitHub/md-to-podcast/upload_podcast_ftp.py",
-    "podcast_out_dir": "/home/pi/Documents/GitHub/md-to-podcast/podcast"
+    "podcast_out_dir": "/home/pi/Documents/GitHub/md-to-podcast/podcast",
+    "voice":           "en-AU-WilliamNeural"
 }
 
 
@@ -103,17 +106,37 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        token = self.headers.get('X-Api-Token', '')
+        if not token_ok(token, CONFIG['api_token']):
+            self.send_json(401, {'ok': False, 'error': 'Invalid API token'})
+            return
+
         if self.path == '/ping':
-            token = self.headers.get('X-Api-Token', '')
-            if not token_ok(token, CONFIG['api_token']):
-                self.send_json(401, {'ok': False, 'error': 'Invalid API token'})
-                return
             self.send_json(200, {'ok': True, 'service': 'PodcastIt'})
+
+        elif self.path == '/voices':
+            try:
+                import edge_tts
+                voices = asyncio.run(edge_tts.list_voices())
+                en_voices = sorted(
+                    [{'name': v['ShortName'], 'gender': v['Gender'], 'locale': v['Locale']}
+                     for v in voices if v['Locale'].startswith('en-')],
+                    key=lambda x: (x['locale'], x['name'])
+                )
+                self.send_json(200, {
+                    'ok': True,
+                    'voices': en_voices,
+                    'default': CONFIG.get('voice', 'en-AU-WilliamNeural')
+                })
+            except Exception as e:
+                log_error(f"Voice list failed: {e}")
+                self.send_json(500, {'ok': False, 'error': str(e)})
+
         else:
             self.send_json(404, {'error': 'Not found'})
 
     def do_POST(self):
-        if self.path != '/convert':
+        if self.path not in ('/convert', '/preview'):
             self.send_json(404, {'error': 'Not found'})
             return
 
@@ -130,6 +153,33 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length).decode('utf-8'))
         except Exception as e:
             self.send_json(400, {'success': False, 'error': f'Bad JSON: {e}'})
+            return
+
+        # ── Preview ────────────────────────────────────────────────────────────
+        if self.path == '/preview':
+            voice = body.get('voice') or CONFIG.get('voice', 'en-AU-WilliamNeural')
+            log_info(f"Preview request for voice: {voice}")
+            try:
+                import edge_tts
+                preview_text = "Hello! This is a preview of the selected voice. It sounds like this."
+                tmp_fd, tmp_path = tempfile.mkstemp(suffix='.mp3')
+                os.close(tmp_fd)
+                async def _gen():
+                    communicate = edge_tts.Communicate(preview_text, voice)
+                    await communicate.save(tmp_path)
+                asyncio.run(_gen())
+                with open(tmp_path, 'rb') as f:
+                    audio_data = f.read()
+                os.unlink(tmp_path)
+                self.send_response(200)
+                self.send_header('Content-Type', 'audio/mpeg')
+                self.send_header('Content-Length', str(len(audio_data)))
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(audio_data)
+            except Exception as e:
+                log_error(f"Preview failed for voice {voice}: {e}")
+                self.send_json(500, {'success': False, 'error': str(e)})
             return
 
         md_content = body.get('mdContent', '')
@@ -156,12 +206,14 @@ class Handler(BaseHTTPRequestHandler):
         log_info(f"Saved MD: {md_path} ({os.path.getsize(md_path):,} bytes)")
 
         # Run podcast pipeline
+        voice    = body.get('voice') or CONFIG.get('voice', 'en-AU-WilliamNeural')
         mp3_path = os.path.join(CONFIG['podcast_out_dir'], f"{md_name}.mp3")
         cmd = (
             f'python3 "{CONFIG["podcast_script"]}" "{md_path}" "{mp3_path}"'
-            f' --engine edge --publish'
+            f' --engine edge --voice "{voice}" --publish'
             f' && python3 "{CONFIG["upload_script"]}"'
         )
+        log_info(f"Voice: {voice}")
         log_info(f"Running: {cmd}")
 
         try:

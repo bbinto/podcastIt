@@ -50,11 +50,12 @@ async function getSettings() {
   });
 }
 
-async function handleConvert({ content, title, url }) {
+async function handleConvert({ content, title, url, voice }) {
   await Logger.info('=== New conversion started ===');
   await Logger.info(`Source URL: ${url}`);
   await Logger.info(`Page title: ${title}`);
   await Logger.info(`Content length: ${content.length} chars`);
+  if (voice) await Logger.info(`Voice: ${voice}`);
 
   const safeName  = sanitizeFilename(title);
   const mdContent = buildMarkdown(title, url, content);
@@ -63,7 +64,7 @@ async function handleConvert({ content, title, url }) {
   const { serverUrl, apiToken } = await getSettings();
   await Logger.info(`Sending to server: ${serverUrl}`);
 
-  const result = await sendToServer({ mdContent, mdName: safeName, title, url }, serverUrl, apiToken);
+  const result = await sendToServer({ mdContent, mdName: safeName, title, url, voice: voice || '' }, serverUrl, apiToken);
   await Logger.info('Server returned success.');
   if (result.output) await Logger.info('Server output: ' + result.output.trim());
 
