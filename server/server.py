@@ -117,23 +117,64 @@ _NOISE_CONTAINS = re.compile(r'''(?ix)(
     \bthis\s+(content\s+is\s+)?sponsored\s+by\b
 )''')
 
+# Matches a "RECOMMENDED READING" heading (with optional markdown bold markers).
+_RECOMMENDED_READING = re.compile(r'(?i)^\*{0,2}recommended\s+reading\*{0,2}$')
+
+# Matches an editor/author byline inside a recommended-reading block.
+# Covers: "By Jane Smith", "— Jane Smith", "Jane Smith, Editor/Curator/…"
+_EDITOR_BYLINE = re.compile(r'''(?ix)^(
+    by\s+[A-Z][a-z]+(\s+[A-Z][a-z]+)+ |
+    [-—~]\s*[A-Z][a-z]+(\s+[A-Z][a-z]+)+ |
+    [A-Z][a-z]+(\s+[A-Z][a-z]+)+\s*,\s*(editor|curator|staff|writer|contributor)
+)$''')
+
 
 def clean_content(text: str) -> str:
     """Remove common ad/noise lines from article text."""
     lines = text.splitlines()
     cleaned = []
-    skip_block = False   # True while we're inside a noise block
+    skip_block = False      # True while we're inside a generic noise block
+    in_recommended = False  # True while inside a RECOMMENDED READING block
+    editor_seen = False     # True once an editor byline was spotted in the block
+    blank_after_editor = False  # True once a blank line followed the editor byline
 
     for line in lines:
         stripped = line.strip()
 
-        # A blank line ends any active skip block
+        # ── Inside a RECOMMENDED READING block ──────────────────────────────
+        if in_recommended:
+            if not stripped:
+                if editor_seen:
+                    blank_after_editor = True
+                # skip blank lines that are part of the block
+                continue
+            # First non-blank line after (blank + editor) → block is over
+            if blank_after_editor:
+                in_recommended = False
+                editor_seen = False
+                blank_after_editor = False
+                cleaned.append(line)
+                continue
+            # Check for an editor byline within the block
+            if _EDITOR_BYLINE.match(stripped):
+                editor_seen = True
+            # Everything inside the block is dropped
+            continue
+
+        # ── Normal processing ────────────────────────────────────────────────
+        # A blank line ends any active generic skip block
         if not stripped:
             skip_block = False
             cleaned.append(line)
             continue
 
         if skip_block:
+            continue
+
+        if _RECOMMENDED_READING.match(stripped):
+            in_recommended = True
+            editor_seen = False
+            blank_after_editor = False
             continue
 
         if _NOISE_EXACT.match(stripped) or _NOISE_CONTAINS.search(stripped):
@@ -287,6 +328,25 @@ class Handler(BaseHTTPRequestHandler):
         log_info(f"Voice: {voice}")
         log_info(f"Running: {cmd}")
 
+        invocation_ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        inv_log_path = os.path.join(CONFIG['podcast_out_dir'], f"{md_name}_{invocation_ts}.log")
+
+        def write_inv_log(status, stdout='', stderr=''):
+            os.makedirs(CONFIG['podcast_out_dir'], exist_ok=True)
+            with open(inv_log_path, 'w', encoding='utf-8') as f:
+                f.write(f"PodcastIt invocation log\n")
+                f.write(f"========================\n")
+                f.write(f"Timestamp : {invocation_ts}\n")
+                f.write(f"Title     : {title}\n")
+                f.write(f"URL       : {url}\n")
+                f.write(f"MD file   : {md_path}\n")
+                f.write(f"MP3 file  : {mp3_path}\n")
+                f.write(f"Voice     : {voice}\n")
+                f.write(f"Status    : {status}\n")
+                f.write(f"\n--- stdout ---\n{stdout}\n")
+                f.write(f"\n--- stderr ---\n{stderr}\n")
+            log_info(f"Invocation log: {inv_log_path}")
+
         try:
             result = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=600)
 
@@ -297,17 +357,21 @@ class Handler(BaseHTTPRequestHandler):
 
             if result.returncode == 0:
                 log_info(f"=== Done: {md_name}.mp3 ===")
+                write_inv_log('SUCCESS', result.stdout, result.stderr)
                 self.send_json(200, {'success': True, 'output': result.stdout, 'mp3': f"{md_name}.mp3"})
             else:
                 err = result.stderr.strip() or result.stdout.strip() or f"Exit code {result.returncode}"
                 log_error(f"Pipeline failed (exit {result.returncode}): {err}")
+                write_inv_log(f"FAILED (exit {result.returncode})", result.stdout, result.stderr)
                 self.send_json(500, {'success': False, 'error': err})
 
         except subprocess.TimeoutExpired:
             log_error("Pipeline timed out after 10 minutes")
+            write_inv_log('FAILED (timeout)', '', 'Podcast script timed out after 10 minutes')
             self.send_json(500, {'success': False, 'error': 'Podcast script timed out (10 min)'})
         except Exception as e:
             log_error(f"Unexpected error: {e}")
+            write_inv_log(f"FAILED (exception)", '', str(e))
             self.send_json(500, {'success': False, 'error': str(e)})
 
 
