@@ -50,6 +50,19 @@ async function getSettings() {
   });
 }
 
+async function shortenUrl(url) {
+  try {
+    const resp = await fetch(`https://tinyurl.com/api-create.php?url=${encodeURIComponent(url)}`);
+    if (resp.ok) {
+      const short = await resp.text();
+      if (short.startsWith('https://tinyurl.com/')) {
+        return short.trim();
+      }
+    }
+  } catch (_) {}
+  return url; // fall back to original if shortening fails
+}
+
 async function handleConvert({ content, title, url, voice }) {
   await Logger.info('=== New conversion started ===');
   await Logger.info(`Source URL: ${url}`);
@@ -58,7 +71,9 @@ async function handleConvert({ content, title, url, voice }) {
   if (voice) await Logger.info(`Voice: ${voice}`);
 
   const safeName  = sanitizeFilename(title);
-  const mdContent = buildMarkdown(title, url, content);
+  const shortUrl  = await shortenUrl(url);
+  if (shortUrl !== url) await Logger.info(`Shortened URL: ${shortUrl}`);
+  const mdContent = buildMarkdown(title, shortUrl, content);
   await Logger.info(`Filename: ${safeName}.md`);
 
   const { serverUrl, apiToken } = await getSettings();
