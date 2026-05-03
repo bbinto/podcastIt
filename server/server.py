@@ -26,7 +26,7 @@ DEFAULT_CONFIG = {
     "api_token":       "change-me-please",
     "host":            "0.0.0.0",
     "port":            5050,
-    "md_save_dir":     "/home/pi/Downloads",
+    "md_save_dir":     "/home/pi/Documents/GitHub/podcastIt/transcripts",
     "podcast_script":  "/home/pi/Documents/GitHub/md-to-podcast/md2podcast.py",
     "upload_script":   "/home/pi/Documents/GitHub/md-to-podcast/upload_podcast_ftp.py",
     "podcast_out_dir": "/home/pi/Documents/GitHub/md-to-podcast/podcast",
@@ -317,12 +317,17 @@ class Handler(BaseHTTPRequestHandler):
             f.write(md_content)
         log_info(f"Saved MD: {md_path} ({os.path.getsize(md_path):,} bytes)")
 
+        # Extract TinyURL embedded in markdown header ("> Source: <url>")
+        source_match = re.search(r'^> Source:\s*(\S+)', md_content, re.MULTILINE)
+        source_url = source_match.group(1) if source_match else ''
+
         # Run podcast pipeline
         voice    = body.get('voice') or CONFIG.get('voice', 'en-AU-WilliamNeural')
         mp3_path = os.path.join(CONFIG['podcast_out_dir'], f"{md_name}.mp3")
         cmd = (
             f'python3 "{CONFIG["podcast_script"]}" "{md_path}" "{mp3_path}"'
             f' --engine edge --voice "{voice}" --publish'
+            f' --source-url "{source_url}"'
             f' && python3 "{CONFIG["upload_script"]}"'
         )
         log_info(f"Voice: {voice}")
